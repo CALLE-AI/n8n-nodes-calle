@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Add a credential-file test request so n8n automated verification can detect the CALL-E credential test.
+
 ## 0.1.2
 
 - Move the canonical source repository to `CALLE-AI/n8n-nodes-calle` so n8n verification can resolve package files from the repository root.

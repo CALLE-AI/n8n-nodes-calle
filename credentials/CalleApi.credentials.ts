@@ -1,4 +1,10 @@
-import type { IAuthenticateGeneric, ICredentialType, Icon, INodeProperties } from 'n8n-workflow';
+import type {
+	IAuthenticateGeneric,
+	ICredentialTestRequest,
+	ICredentialType,
+	Icon,
+	INodeProperties,
+} from 'n8n-workflow';
 
 export class CalleApi implements ICredentialType {
 	name = 'calleApi';
@@ -46,5 +52,30 @@ export class CalleApi implements ICredentialType {
 				Authorization: '=Bearer {{$credentials.apiKey}}',
 			},
 		},
+	};
+
+	test: ICredentialTestRequest = {
+		request: {
+			baseURL: 'https://api.heycall-e.com',
+			url: '/v1/calls/__n8n_credential_test__',
+			method: 'GET',
+			ignoreHttpStatusErrors: { ignore: true, except: [401, 403] },
+		},
+		rules: [
+			{
+				type: 'responseCode',
+				properties: {
+					value: 401,
+					message: 'Invalid or missing CALL-E API key.',
+				},
+			},
+			{
+				type: 'responseCode',
+				properties: {
+					value: 403,
+					message: 'CALL-E API key is valid but not authorized to access call tasks.',
+				},
+			},
+		],
 	};
 }
