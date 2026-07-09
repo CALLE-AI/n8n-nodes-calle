@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Update the CALL-E node icon.
+
 ## 0.1.3
 
 - Add a credential-file test request so n8n automated verification can detect the CALL-E credential test.
