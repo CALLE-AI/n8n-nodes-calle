@@ -26,7 +26,7 @@ The development server starts n8n with the CALL-E node linked into the local cus
 
 Create a `CALL-E API` credential in n8n with:
 
-- `API Key`: Create or manage a key in the [CALL-E dashboard](https://dashboard.heycall-e.com/account/api-keys). The value is stored as a password field.
+- `API Key`: Open [CALL-E dashboard → API Keys](https://dashboard.heycall-e.com/account/api-keys), then select **Create API key** in the upper-right corner. The value is stored as a password field.
 - `Base URL`: Defaults to `https://api.heycall-e.com`.
 - `Request Timeout (MS)`: Timeout for each individual CALL-E API request.
 
@@ -118,7 +118,7 @@ If Trusted Publishing is not configured, add an npm automation token as the GitH
 
 ## Resources
 
-- [Create or manage CALL-E API keys](https://dashboard.heycall-e.com/account/api-keys)
+- [Create or manage CALL-E API keys](https://dashboard.heycall-e.com/account/api-keys) — select **Create API key** in the upper-right corner.
 - [CALL-E Developer Docs](https://docs.heycall-e.com/)
 - [CALL-E API Reference](https://docs.heycall-e.com/#/api-reference)
 - [CALL-E SDKs](https://docs.heycall-e.com/#/sdks)

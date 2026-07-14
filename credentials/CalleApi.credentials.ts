@@ -23,7 +23,8 @@ export class CalleApi implements ICredentialType {
 			typeOptions: { password: true },
 			required: true,
 			default: '',
-			description: 'CALL-E API key for server-side workflow automation',
+			description:
+				'Create or manage a key in the <a href="https://dashboard.heycall-e.com/account/api-keys" target="_blank">CALL-E dashboard</a>, then select <strong>Create API key</strong> in the upper-right corner.',
 		},
 		{
 			displayName: 'Base URL',
