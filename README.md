@@ -1,6 +1,6 @@
 # @call-e/n8n-nodes-calle
 
-This package provides an n8n community node for CALL-E AI-agent phone-call workflows. It lets n8n workflows create CALL-E call tasks, fetch their status, wait for completion, and read developer events.
+This package provides an n8n community node for CALL-E AI-agent phone-call workflows. It lets n8n workflows create CALL-E call tasks, fetch their status, wait for completion, read developer events, and execute published Goals.
 
 [n8n](https://n8n.io/) is a workflow automation platform. [CALL-E](https://www.heycall-e.com/) provides a Developer API for server-side AI-agent phone-call tasks.
 
@@ -34,7 +34,9 @@ Do not expose CALL-E API keys in browser code, workflow logs, screenshots, or is
 
 ## Operations
 
-The first release focuses on the `Call` resource:
+The node provides `Call`, `Goal`, and `Goal Run` resources.
+
+`Call` operations:
 
 - `Create`: Creates a CALL-E call task.
 - `Get`: Gets one CALL-E call task by ID.
@@ -42,6 +44,17 @@ The first release focuses on the `Call` resource:
 - `List Events`: Lists developer events for one call task.
 
 `Cancel` is not included in this release because the current CALL-E Developer API and server SDKs do not expose a cancel call task API.
+
+`Goal` operations:
+
+- `List`: Lists published Goals using cursor pagination.
+- `Get`: Gets one published Goal by ID.
+
+`Goal Run` operations:
+
+- `Create`: Creates one phone-specific execution of a published Goal.
+- `Get`: Gets one Goal Run by Goal ID and Goal Run ID.
+- `Create and Wait`: Creates a Goal Run, then polls until CALL-E returns a structured `result` or final `error`.
 
 ## Call Parameters
 
@@ -61,6 +74,17 @@ The first release focuses on the `Call` resource:
 
 - `Polling Interval (MS)`: How often n8n polls CALL-E for the current call status.
 - `Timeout (MS)`: Maximum total wait time before the node fails.
+
+## Goal Run Parameters
+
+`Create` and `Create and Wait` require:
+
+- `Goal ID`: The public ID of a published CALL-E Goal.
+- `Phone Number`: An authorized E.164 recipient number.
+- `Idempotency Key`: A durable key for exactly one business event. Reuse the same key only to retry the identical Goal Run request.
+- `Variables`: An optional flat JSON object of finite strings, booleans, or numbers accepted by the Goal's published input schema.
+
+`Create and Wait` continues after `status=completed` while both `result` and `error` are null; CALL-E may still be persisting the validated result. A timeout does not cancel the provider-side Goal Run. Use `Get` with the returned Goal Run ID rather than creating another run.
 
 ## Outputs
 
@@ -119,7 +143,5 @@ If Trusted Publishing is not configured, add an npm automation token as the GitH
 ## Resources
 
 - [Create or manage CALL-E API keys](https://dashboard.heycall-e.com/account/api-keys) — select **Create API key** in the upper-right corner.
-- [CALL-E Developer Docs](https://docs.heycall-e.com/)
-- [CALL-E API Reference](https://docs.heycall-e.com/#/api-reference)
-- [CALL-E SDKs](https://docs.heycall-e.com/#/sdks)
+- [CALL-E API Reference](https://test-docs.heycall-e.com/api-reference)
 - [n8n community nodes documentation](https://docs.n8n.io/integrations/community-nodes/)

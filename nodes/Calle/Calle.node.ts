@@ -17,8 +17,14 @@ import {
 } from 'n8n-workflow';
 import { calleApiRequest } from './shared/transport';
 import {
+	assertGoalRunVariables,
+	assertRequiredIdempotencyKey,
+	buildGoalRunBody,
 	buildCreateCallBody,
+	getGoalPath,
+	getGoalRunPath,
 	getPollingSleepMs,
+	isGoalRunResolved,
 	isTerminalCallStatus,
 	parseJsonObject,
 	validateCalleBaseUrl,
@@ -62,6 +68,37 @@ const callOperations: INodeProperties[] = [
 			},
 		],
 		default: 'create',
+	},
+];
+
+const goalOperations: INodeProperties[] = [
+	{
+		displayName: 'Operation',
+		name: 'operation',
+		type: 'options',
+		noDataExpression: true,
+		displayOptions: { show: { resource: ['goal'] } },
+		options: [
+			{ name: 'List', value: 'list', description: 'List published CALL-E Goals', action: 'List goals' },
+			{ name: 'Get', value: 'getGoal', description: 'Get a published CALL-E Goal by ID', action: 'Get a goal' },
+		],
+		default: 'list',
+	},
+];
+
+const goalRunOperations: INodeProperties[] = [
+	{
+		displayName: 'Operation',
+		name: 'operation',
+		type: 'options',
+		noDataExpression: true,
+		displayOptions: { show: { resource: ['goalRun'] } },
+		options: [
+			{ name: 'Create', value: 'createGoalRun', description: 'Create a phone-specific execution of a published Goal', action: 'Create a goal run' },
+			{ name: 'Get', value: 'getGoalRun', description: 'Get a Goal Run by Goal and Run ID', action: 'Get a goal run' },
+			{ name: 'Create and Wait', value: 'createGoalRunAndWait', description: 'Create a Goal Run and poll for its result or final error', action: 'Create a goal run and wait for a result' },
+		],
+		default: 'createGoalRun',
 	},
 ];
 
@@ -183,8 +220,8 @@ const createFields: INodeProperties[] = [
 		description: 'How often to poll CALL-E for the call status',
 		displayOptions: {
 			show: {
-				resource: ['call'],
-				operation: ['createAndWait'],
+				resource: ['call', 'goalRun'],
+				operation: ['createAndWait', 'createGoalRunAndWait'],
 			},
 		},
 	},
@@ -199,8 +236,8 @@ const createFields: INodeProperties[] = [
 		description: 'Maximum time to wait for the call task to reach a terminal status',
 		displayOptions: {
 			show: {
-				resource: ['call'],
-				operation: ['createAndWait'],
+				resource: ['call', 'goalRun'],
+				operation: ['createAndWait', 'createGoalRunAndWait'],
 			},
 		},
 	},
@@ -253,6 +290,73 @@ const getFields: INodeProperties[] = [
 	},
 ];
 
+const goalFields: INodeProperties[] = [
+	{
+		displayName: 'Cursor',
+		name: 'goalCursor',
+		type: 'string',
+		default: '',
+		description: 'Pagination cursor returned by CALL-E',
+		displayOptions: { show: { resource: ['goal'], operation: ['list'] } },
+	},
+	{
+		displayName: 'Limit',
+		name: 'goalLimit',
+		type: 'number',
+		default: 50,
+		typeOptions: { minValue: 1, maxValue: 100 },
+		description: 'Max number of Goals to return',
+		displayOptions: { show: { resource: ['goal'], operation: ['list'] } },
+	},
+	{
+		displayName: 'Goal ID',
+		name: 'goalId',
+		type: 'string',
+		required: true,
+		default: '',
+		description: 'Published CALL-E Goal ID',
+		displayOptions: {
+			show: { resource: ['goal', 'goalRun'], operation: ['getGoal', 'createGoalRun', 'getGoalRun', 'createGoalRunAndWait'] },
+		},
+	},
+	{
+		displayName: 'Goal Run ID',
+		name: 'goalRunId',
+		type: 'string',
+		required: true,
+		default: '',
+		description: 'Goal Run ID returned by Create Goal Run',
+		displayOptions: { show: { resource: ['goalRun'], operation: ['getGoalRun'] } },
+	},
+	{
+		displayName: 'Phone Number',
+		name: 'goalRunPhoneNumber',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: '+14155550100',
+		description: 'Authorized recipient phone number in E.164 format',
+		displayOptions: { show: { resource: ['goalRun'], operation: ['createGoalRun', 'createGoalRunAndWait'] } },
+	},
+	{
+		displayName: 'Idempotency Key',
+		name: 'goalRunIdempotencyKey',
+		type: 'string',
+		required: true,
+		default: '={{$execution.id + ":goal-run:" + $itemIndex}}',
+		description: 'Stable business key for one Goal Run. Reuse it only for retries of the exact same request.',
+		displayOptions: { show: { resource: ['goalRun'], operation: ['createGoalRun', 'createGoalRunAndWait'] } },
+	},
+	{
+		displayName: 'Variables',
+		name: 'goalRunVariables',
+		type: 'json',
+		default: '',
+		description: 'Optional flat object of finite string, boolean, or number values accepted by the published Goal',
+		displayOptions: { show: { resource: ['goalRun'], operation: ['createGoalRun', 'createGoalRunAndWait'] } },
+	},
+];
+
 export class Calle implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'CALL-E',
@@ -286,12 +390,23 @@ export class Calle implements INodeType {
 						name: 'Call',
 						value: 'call',
 					},
+					{
+						name: 'Goal',
+						value: 'goal',
+					},
+					{
+						name: 'Goal Run',
+						value: 'goalRun',
+					},
 				],
 				default: 'call',
 			},
 			...callOperations,
+			...goalOperations,
+			...goalRunOperations,
 			...createFields,
 			...getFields,
+			...goalFields,
 		],
 	};
 
@@ -310,13 +425,7 @@ export class Calle implements INodeType {
 				const resource = this.getNodeParameter('resource', itemIndex) as string;
 				const operation = this.getNodeParameter('operation', itemIndex) as string;
 
-				if (resource !== 'call') {
-					throw new NodeOperationError(this.getNode(), `Unsupported resource: ${resource}`, {
-						itemIndex,
-					});
-				}
-
-				const responseData = await executeCallOperation.call(this, operation, itemIndex);
+				const responseData = await executeResourceOperation.call(this, resource, operation, itemIndex);
 
 				returnData.push({
 					json: responseData,
@@ -392,6 +501,27 @@ async function executeCallOperation(
 	throw new NodeOperationError(this.getNode(), `Unsupported operation: ${operation}`, {
 		itemIndex,
 	});
+}
+
+async function executeResourceOperation(
+	this: IExecuteFunctions,
+	resource: string,
+	operation: string,
+	itemIndex: number,
+): Promise<IDataObject> {
+	if (resource === 'call') {
+		return await executeCallOperation.call(this, operation, itemIndex);
+	}
+
+	if (resource === 'goal') {
+		return await executeGoalOperation.call(this, operation, itemIndex);
+	}
+
+	if (resource === 'goalRun') {
+		return await executeGoalRunOperation.call(this, operation, itemIndex);
+	}
+
+	throw new NodeOperationError(this.getNode(), `Unsupported resource: ${resource}`, { itemIndex });
 }
 
 async function createCall(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
@@ -472,6 +602,73 @@ async function listCallEvents(this: IExecuteFunctions, itemIndex: number): Promi
 	)) as IDataObject;
 }
 
+async function executeGoalOperation(
+	this: IExecuteFunctions,
+	operation: string,
+	itemIndex: number,
+): Promise<IDataObject> {
+	if (operation === 'list') {
+		const qs: IDataObject = { limit: getNumberParameter.call(this, 'goalLimit', itemIndex) };
+		const cursor = getOptionalStringParameter.call(this, 'goalCursor', itemIndex);
+		if (cursor) qs.cursor = cursor;
+		return (await callCalleApi.call(this, 'GET', '/v1/goals', itemIndex, undefined, qs)) as IDataObject;
+	}
+
+	if (operation === 'getGoal') {
+		const goalId = getRequiredStringParameter.call(this, 'goalId', itemIndex);
+		return (await callCalleApi.call(this, 'GET', getGoalPath(goalId), itemIndex)) as IDataObject;
+	}
+
+	throw new NodeOperationError(this.getNode(), `Unsupported Goal operation: ${operation}`, { itemIndex });
+}
+
+async function executeGoalRunOperation(
+	this: IExecuteFunctions,
+	operation: string,
+	itemIndex: number,
+): Promise<IDataObject> {
+	if (operation === 'createGoalRun') return await createGoalRun.call(this, itemIndex);
+	if (operation === 'getGoalRun') return await getGoalRun.call(this, itemIndex);
+	if (operation === 'createGoalRunAndWait') return await createGoalRunAndWait.call(this, itemIndex);
+	throw new NodeOperationError(this.getNode(), `Unsupported Goal Run operation: ${operation}`, { itemIndex });
+}
+
+async function createGoalRun(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
+	const goalId = getRequiredStringParameter.call(this, 'goalId', itemIndex);
+	const idempotencyKey = assertRequiredIdempotencyKey(
+		getRequiredStringParameter.call(this, 'goalRunIdempotencyKey', itemIndex),
+	);
+	return (await callCalleApi.call(this, 'POST', `${getGoalPath(goalId)}/runs`, itemIndex, getGoalRunBody.call(this, itemIndex), {}, {
+		'Idempotency-Key': idempotencyKey,
+	})) as IDataObject;
+}
+
+async function getGoalRun(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
+	const goalId = getRequiredStringParameter.call(this, 'goalId', itemIndex);
+	const goalRunId = getRequiredStringParameter.call(this, 'goalRunId', itemIndex);
+	return (await callCalleApi.call(this, 'GET', getGoalRunPath(goalId, goalRunId), itemIndex)) as IDataObject;
+}
+
+async function createGoalRunAndWait(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
+	const createdGoalRun = await createGoalRun.call(this, itemIndex);
+	const goalId = getRequiredStringParameter.call(this, 'goalId', itemIndex);
+	const goalRunId = getStringFromResponse.call(this, createdGoalRun, 'id', itemIndex);
+	const pollingInterval = getNumberParameter.call(this, 'pollingInterval', itemIndex);
+	const timeout = getNumberParameter.call(this, 'timeout', itemIndex);
+	const deadline = Date.now() + timeout;
+	let latestGoalRun = createdGoalRun;
+
+	while (!isGoalRunResolved(latestGoalRun)) {
+		const sleepMs = getPollingSleepMs(pollingInterval, deadline);
+		if (sleepMs <= 0) break;
+		await sleep(sleepMs);
+		latestGoalRun = (await callCalleApi.call(this, 'GET', getGoalRunPath(goalId, goalRunId), itemIndex)) as IDataObject;
+	}
+
+	if (isGoalRunResolved(latestGoalRun)) return latestGoalRun;
+	throw new NodeOperationError(this.getNode(), `Timed out waiting for CALL-E Goal Run ${goalRunId} to produce a result or error.`, { itemIndex });
+}
+
 function getCreateCallBody(this: IExecuteFunctions, itemIndex: number): IDataObject {
 	const task = getRequiredStringParameter.call(this, 'task', itemIndex);
 	const phoneNumber = getRequiredStringParameter.call(this, 'phoneNumber', itemIndex);
@@ -493,6 +690,14 @@ function getCreateCallBody(this: IExecuteFunctions, itemIndex: number): IDataObj
 		recipientResultSchema,
 		webhookUrl: optionalString(additionalFields.webhookUrl),
 	}) as unknown as IDataObject;
+}
+
+function getGoalRunBody(this: IExecuteFunctions, itemIndex: number): IDataObject {
+	const phoneNumber = getRequiredStringParameter.call(this, 'goalRunPhoneNumber', itemIndex);
+	const variables = assertGoalRunVariables(
+		parseJsonObject(this.getNodeParameter('goalRunVariables', itemIndex, ''), 'Variables'),
+	);
+	return buildGoalRunBody({ phoneNumber, variables }) as unknown as IDataObject;
 }
 
 async function callCalleApi(

@@ -6,7 +6,7 @@ class CalleApi {
         this.name = 'calleApi';
         this.displayName = 'CALL-E API';
         this.icon = { light: 'file:../icons/calle.svg', dark: 'file:../icons/calle.dark.svg' };
-        this.documentationUrl = 'https://docs.heycall-e.com/#/authentication';
+        this.documentationUrl = 'https://test-docs.heycall-e.com/api-reference';
         this.properties = [
             {
                 displayName: 'API Key',

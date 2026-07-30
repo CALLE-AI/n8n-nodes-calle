@@ -33,6 +33,16 @@ export interface CreateCallBody {
 	webhook_url?: string;
 }
 
+export interface GoalRunBody {
+	phone_number: string;
+	variables?: JsonObject;
+}
+
+export interface GoalRunBodyInput {
+	phoneNumber: string;
+	variables?: JsonObject;
+}
+
 export type CalleBaseUrlValidationResult =
 	| {
 			ok: true;
@@ -110,6 +120,66 @@ export function buildCreateCallBody(input: CreateCallBodyInput): CreateCallBody 
 	return body;
 }
 
+export function assertGoalRunVariables(variables: JsonObject | undefined): JsonObject | undefined {
+	if (variables === undefined) {
+		return undefined;
+	}
+
+	for (const [key, value] of Object.entries(variables)) {
+		if (value === null || Array.isArray(value) || typeof value === 'object') {
+			throw new CalleValidationError(`Variables.${key} must be a flat object scalar value.`);
+		}
+
+		if (typeof value !== 'string' && typeof value !== 'boolean' && typeof value !== 'number') {
+			throw new CalleValidationError(`Variables.${key} must be a string, boolean, or number.`);
+		}
+
+		if (typeof value === 'number' && !Number.isFinite(value)) {
+			throw new CalleValidationError(`Variables.${key} must be finite.`);
+		}
+	}
+
+	return variables;
+}
+
+export function buildGoalRunBody(input: GoalRunBodyInput): GoalRunBody {
+	const variables = assertGoalRunVariables(input.variables);
+	const body: GoalRunBody = {
+		phone_number: assertValidE164PhoneNumber(input.phoneNumber),
+	};
+
+	if (variables !== undefined && Object.keys(variables).length > 0) {
+		body.variables = variables;
+	}
+
+	return body;
+}
+
+export function isGoalRunResolved(goalRun: JsonObject): boolean {
+	return (
+		(goalRun.result !== null && goalRun.result !== undefined) ||
+		(goalRun.error !== null && goalRun.error !== undefined)
+	);
+}
+
+export function getGoalPath(goalId: string): string {
+	return `/v1/goals/${encodePathIdentifier(goalId, 'Goal ID')}`;
+}
+
+export function getGoalRunPath(goalId: string, goalRunId: string): string {
+	return `${getGoalPath(goalId)}/runs/${encodePathIdentifier(goalRunId, 'Goal Run ID')}`;
+}
+
+export function assertRequiredIdempotencyKey(value: string): string {
+	const trimmed = value.trim();
+
+	if (!trimmed) {
+		throw new CalleValidationError('Idempotency Key is required.');
+	}
+
+	return trimmed;
+}
+
 export function isTerminalCallStatus(status: string): boolean {
 	return status === 'completed' || status === 'failed' || status === 'canceled';
 }
@@ -168,4 +238,14 @@ function isJsonObject(value: unknown): value is JsonObject {
 
 function isAllowedLoopbackHttpUrl(url: URL): boolean {
 	return url.protocol === 'http:' && LOOPBACK_HTTP_HOSTS.has(url.hostname.toLowerCase());
+}
+
+function encodePathIdentifier(value: string, fieldName: string): string {
+	const trimmed = value.trim();
+
+	if (!trimmed) {
+		throw new CalleValidationError(`${fieldName} is required.`);
+	}
+
+	return encodeURIComponent(trimmed);
 }

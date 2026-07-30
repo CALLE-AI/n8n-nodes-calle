@@ -3,8 +3,14 @@ import { describe, it } from 'node:test';
 
 import {
 	assertValidE164PhoneNumber,
+	assertRequiredIdempotencyKey,
+	assertGoalRunVariables,
+	buildGoalRunBody,
 	buildCreateCallBody,
 	getPollingSleepMs,
+	getGoalPath,
+	getGoalRunPath,
+	isGoalRunResolved,
 	isTerminalCallStatus,
 	maskPhoneNumber,
 	parseJsonObject,
@@ -63,6 +69,46 @@ describe('CALL-E utility helpers', () => {
 				webhook_url: 'https://example.com/calle/webhook',
 			},
 		);
+	});
+
+	it('builds a Goal Run body with its documented phone_number and scalar variables', () => {
+		assert.deepEqual(
+			buildGoalRunBody({
+				phoneNumber: '+14155550100',
+				variables: { order_id: 'ORD-8472', expedited: true },
+			}),
+			{
+				phone_number: '+14155550100',
+				variables: { order_id: 'ORD-8472', expedited: true },
+			},
+		);
+	});
+
+	it('rejects nested and non-finite Goal Run variables', () => {
+		assert.throws(() => assertGoalRunVariables({ order: { id: 'ORD-8472' } }), /flat object/);
+		assert.throws(() => assertGoalRunVariables({ score: Number.NaN }), /finite/);
+	});
+
+	it('waits for a Goal Run result or error rather than status alone', () => {
+		assert.equal(isGoalRunResolved({ status: 'completed', result: null, error: null }), false);
+		assert.equal(
+			isGoalRunResolved({ status: 'completed', result: { confirmed: true }, error: null }),
+			true,
+		);
+		assert.equal(
+			isGoalRunResolved({ status: 'failed', result: null, error: { code: 'no_answer' } }),
+			true,
+		);
+	});
+
+	it('encodes public Goal and Goal Run identifiers in documented paths', () => {
+		assert.equal(getGoalPath('goal/1'), '/v1/goals/goal%2F1');
+		assert.equal(getGoalRunPath('goal/1', 'goal_run/2'), '/v1/goals/goal%2F1/runs/goal_run%2F2');
+	});
+
+	it('requires a business-stable Goal Run idempotency key', () => {
+		assert.equal(assertRequiredIdempotencyKey('delivery:ORD-8472:v1'), 'delivery:ORD-8472:v1');
+		assert.throws(() => assertRequiredIdempotencyKey(''), /Idempotency Key is required/);
 	});
 
 	it('detects terminal call statuses', () => {
