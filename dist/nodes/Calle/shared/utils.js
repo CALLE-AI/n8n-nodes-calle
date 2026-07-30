@@ -3,6 +3,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.assertValidE164PhoneNumber = assertValidE164PhoneNumber;
 exports.parseJsonObject = parseJsonObject;
 exports.buildCreateCallBody = buildCreateCallBody;
+exports.assertGoalRunVariables = assertGoalRunVariables;
+exports.buildGoalRunBody = buildGoalRunBody;
+exports.isGoalRunResolved = isGoalRunResolved;
+exports.getGoalPath = getGoalPath;
+exports.getGoalRunPath = getGoalRunPath;
+exports.assertRequiredIdempotencyKey = assertRequiredIdempotencyKey;
 exports.isTerminalCallStatus = isTerminalCallStatus;
 exports.maskPhoneNumber = maskPhoneNumber;
 exports.validateCalleBaseUrl = validateCalleBaseUrl;
@@ -62,6 +68,50 @@ function buildCreateCallBody(input) {
     }
     return body;
 }
+function assertGoalRunVariables(variables) {
+    if (variables === undefined) {
+        return undefined;
+    }
+    for (const [key, value] of Object.entries(variables)) {
+        if (value === null || Array.isArray(value) || typeof value === 'object') {
+            throw new CalleValidationError(`Variables.${key} must be a flat object scalar value.`);
+        }
+        if (typeof value !== 'string' && typeof value !== 'boolean' && typeof value !== 'number') {
+            throw new CalleValidationError(`Variables.${key} must be a string, boolean, or number.`);
+        }
+        if (typeof value === 'number' && !Number.isFinite(value)) {
+            throw new CalleValidationError(`Variables.${key} must be finite.`);
+        }
+    }
+    return variables;
+}
+function buildGoalRunBody(input) {
+    const variables = assertGoalRunVariables(input.variables);
+    const body = {
+        phone_number: assertValidE164PhoneNumber(input.phoneNumber),
+    };
+    if (variables !== undefined && Object.keys(variables).length > 0) {
+        body.variables = variables;
+    }
+    return body;
+}
+function isGoalRunResolved(goalRun) {
+    return ((goalRun.result !== null && goalRun.result !== undefined) ||
+        (goalRun.error !== null && goalRun.error !== undefined));
+}
+function getGoalPath(goalId) {
+    return `/v1/goals/${encodePathIdentifier(goalId, 'Goal ID')}`;
+}
+function getGoalRunPath(goalId, goalRunId) {
+    return `${getGoalPath(goalId)}/runs/${encodePathIdentifier(goalRunId, 'Goal Run ID')}`;
+}
+function assertRequiredIdempotencyKey(value) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        throw new CalleValidationError('Idempotency Key is required.');
+    }
+    return trimmed;
+}
 function isTerminalCallStatus(status) {
     return status === 'completed' || status === 'failed' || status === 'canceled';
 }
@@ -109,5 +159,12 @@ function isJsonObject(value) {
 }
 function isAllowedLoopbackHttpUrl(url) {
     return url.protocol === 'http:' && LOOPBACK_HTTP_HOSTS.has(url.hostname.toLowerCase());
+}
+function encodePathIdentifier(value, fieldName) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        throw new CalleValidationError(`${fieldName} is required.`);
+    }
+    return encodeURIComponent(trimmed);
 }
 //# sourceMappingURL=utils.js.map

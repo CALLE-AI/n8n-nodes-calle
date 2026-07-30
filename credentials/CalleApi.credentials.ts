@@ -13,7 +13,7 @@ export class CalleApi implements ICredentialType {
 
 	icon: Icon = { light: 'file:../icons/calle.svg', dark: 'file:../icons/calle.dark.svg' };
 
-	documentationUrl = 'https://docs.heycall-e.com/#/authentication';
+	documentationUrl = 'https://test-docs.heycall-e.com/api-reference';
 
 	properties: INodeProperties[] = [
 		{

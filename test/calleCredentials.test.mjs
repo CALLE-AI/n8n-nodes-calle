@@ -6,6 +6,12 @@ const require = createRequire(import.meta.url);
 const { CalleApi } = require('../dist/credentials/CalleApi.credentials.js');
 
 describe('CALL-E credential definition', () => {
+	it('links users to the API v0.6 reference', () => {
+		const credential = new CalleApi();
+
+		assert.equal(credential.documentationUrl, 'https://test-docs.heycall-e.com/api-reference');
+	});
+
 	it('exposes a credential-file test request for n8n verification', () => {
 		const credential = new CalleApi();
 

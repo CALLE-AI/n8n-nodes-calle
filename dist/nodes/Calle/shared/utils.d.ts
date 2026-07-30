@@ -21,6 +21,14 @@ export interface CreateCallBody {
     recipient_result_schema?: JsonObject;
     webhook_url?: string;
 }
+export interface GoalRunBody {
+    phone_number: string;
+    variables?: JsonObject;
+}
+export interface GoalRunBodyInput {
+    phoneNumber: string;
+    variables?: JsonObject;
+}
 export type CalleBaseUrlValidationResult = {
     ok: true;
     baseUrl: string;
@@ -31,6 +39,12 @@ export type CalleBaseUrlValidationResult = {
 export declare function assertValidE164PhoneNumber(phoneNumber: string): string;
 export declare function parseJsonObject(value: unknown, fieldName: string): JsonObject | undefined;
 export declare function buildCreateCallBody(input: CreateCallBodyInput): CreateCallBody;
+export declare function assertGoalRunVariables(variables: JsonObject | undefined): JsonObject | undefined;
+export declare function buildGoalRunBody(input: GoalRunBodyInput): GoalRunBody;
+export declare function isGoalRunResolved(goalRun: JsonObject): boolean;
+export declare function getGoalPath(goalId: string): string;
+export declare function getGoalRunPath(goalId: string, goalRunId: string): string;
+export declare function assertRequiredIdempotencyKey(value: string): string;
 export declare function isTerminalCallStatus(status: string): boolean;
 export declare function maskPhoneNumber(phoneNumber: string): string;
 export declare function validateCalleBaseUrl(baseUrl: unknown): CalleBaseUrlValidationResult;
