@@ -189,7 +189,10 @@ export function maskPhoneNumber(phoneNumber: string): string {
 		return '***';
 	}
 
-	return `${phoneNumber.slice(0, 5)}***${phoneNumber.slice(-4)}`;
+	// Keep up to five leading characters, but never so many that the two
+	// slices meet: at least three characters are always hidden.
+	const head = Math.min(5, phoneNumber.length - 7);
+	return `${phoneNumber.slice(0, head)}***${phoneNumber.slice(-4)}`;
 }
 
 export function validateCalleBaseUrl(baseUrl: unknown): CalleBaseUrlValidationResult {
