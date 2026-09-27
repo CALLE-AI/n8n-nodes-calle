@@ -123,6 +123,19 @@ describe('CALL-E utility helpers', () => {
 		assert.equal(maskPhoneNumber('1234'), '***');
 	});
 
+	it('always hides at least three characters of a short phone number', () => {
+		assert.equal(maskPhoneNumber('+1234567'), '+***4567');
+		assert.equal(maskPhoneNumber('+15551234'), '+1***1234');
+		assert.equal(maskPhoneNumber('+123456789'), '+12***6789');
+		assert.equal(maskPhoneNumber('+2348012345'), '+234***2345');
+
+		for (let length = 8; length <= 16; length += 1) {
+			const phoneNumber = `+${'9'.repeat(length - 1)}`;
+			const visible = maskPhoneNumber(phoneNumber).replace('***', '').length;
+			assert.ok(length - visible >= 3, `length ${length} shows ${visible} characters`);
+		}
+	});
+
 	it('requires HTTPS base URLs except for loopback local development hosts', () => {
 		assert.deepEqual(validateCalleBaseUrl('https://api.heycall-e.com/'), {
 			ok: true,

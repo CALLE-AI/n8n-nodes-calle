@@ -119,7 +119,8 @@ function maskPhoneNumber(phoneNumber) {
     if (phoneNumber.length < 8) {
         return '***';
     }
-    return `${phoneNumber.slice(0, 5)}***${phoneNumber.slice(-4)}`;
+    const head = Math.min(5, phoneNumber.length - 7);
+    return `${phoneNumber.slice(0, head)}***${phoneNumber.slice(-4)}`;
 }
 function validateCalleBaseUrl(baseUrl) {
     const rawBaseUrl = typeof baseUrl === 'string' && baseUrl.trim() ? baseUrl.trim() : DEFAULT_BASE_URL;
