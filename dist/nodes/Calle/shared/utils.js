@@ -2,10 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.assertValidE164PhoneNumber = assertValidE164PhoneNumber;
 exports.parseJsonObject = parseJsonObject;
+exports.buildLegacyCreateCallBody = buildLegacyCreateCallBody;
 exports.buildCreateCallBody = buildCreateCallBody;
 exports.assertGoalRunVariables = assertGoalRunVariables;
 exports.buildGoalRunBody = buildGoalRunBody;
-exports.isGoalRunResolved = isGoalRunResolved;
+exports.isResultReady = isResultReady;
 exports.getGoalPath = getGoalPath;
 exports.getGoalRunPath = getGoalRunPath;
 exports.assertRequiredIdempotencyKey = assertRequiredIdempotencyKey;
@@ -40,7 +41,7 @@ function parseJsonObject(value, fieldName) {
     }
     return parsed;
 }
-function buildCreateCallBody(input) {
+function buildLegacyCreateCallBody(input) {
     const recipient = {
         phones: [assertValidE164PhoneNumber(input.phoneNumber)],
     };
@@ -68,6 +69,47 @@ function buildCreateCallBody(input) {
     }
     return body;
 }
+function buildCreateCallBody(input) {
+    if (input.recipientResultSchema !== undefined) {
+        throw new CalleValidationError('Recipient Result Schema is not supported by Calls v2. Move its required fields into Result Schema.');
+    }
+    const body = {
+        task: input.task,
+        phone: assertValidE164PhoneNumber(input.phoneNumber),
+        result_schema: assertResultSchema(input.resultSchema),
+    };
+    if (input.locale)
+        body.locale = input.locale;
+    if (input.region)
+        body.region = input.region;
+    if (input.metadata !== undefined)
+        body.metadata = input.metadata;
+    if (input.webhookUrl)
+        body.webhook_url = input.webhookUrl;
+    return body;
+}
+function assertResultSchema(schema) {
+    if (!schema || schema.type !== 'object' || schema.additionalProperties !== false) {
+        throw new CalleValidationError('Result Schema is required and must use type "object" and additionalProperties false.');
+    }
+    const properties = schema.properties === undefined ? {} : schema.properties;
+    if (!isJsonObject(properties) || Object.keys(properties).length > 32) {
+        throw new CalleValidationError('Result Schema must contain at most 32 scalar properties.');
+    }
+    const combinators = ['allOf', 'anyOf', 'oneOf', 'not'];
+    if (combinators.some((key) => key in schema)) {
+        throw new CalleValidationError('Result Schema does not support schema combinators.');
+    }
+    for (const [name, property] of Object.entries(properties)) {
+        if (!isJsonObject(property) ||
+            typeof property.type !== 'string' ||
+            !['string', 'boolean', 'integer', 'number'].includes(property.type) ||
+            combinators.some((key) => key in property)) {
+            throw new CalleValidationError(`Result Schema.${name} must use a scalar type without combinators.`);
+        }
+    }
+    return schema;
+}
 function assertGoalRunVariables(variables) {
     if (variables === undefined) {
         return undefined;
@@ -88,16 +130,15 @@ function assertGoalRunVariables(variables) {
 function buildGoalRunBody(input) {
     const variables = assertGoalRunVariables(input.variables);
     const body = {
-        phone_number: assertValidE164PhoneNumber(input.phoneNumber),
+        phone: assertValidE164PhoneNumber(input.phoneNumber),
     };
     if (variables !== undefined && Object.keys(variables).length > 0) {
         body.variables = variables;
     }
     return body;
 }
-function isGoalRunResolved(goalRun) {
-    return ((goalRun.result !== null && goalRun.result !== undefined) ||
-        (goalRun.error !== null && goalRun.error !== undefined));
+function isResultReady(call) {
+    return call.result_status === 'available' || call.result_status === 'unavailable' || call.result_status === 'not_applicable';
 }
 function getGoalPath(goalId) {
     return `/v1/goals/${encodePathIdentifier(goalId, 'Goal ID')}`;
@@ -109,6 +150,9 @@ function assertRequiredIdempotencyKey(value) {
     const trimmed = value.trim();
     if (!trimmed) {
         throw new CalleValidationError('Idempotency Key is required.');
+    }
+    if (Array.from(trimmed).length > 255) {
+        throw new CalleValidationError('Idempotency Key must contain at most 255 characters.');
     }
     return trimmed;
 }

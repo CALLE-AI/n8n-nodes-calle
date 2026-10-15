@@ -1,10 +1,11 @@
 import type {
-	IAuthenticateGeneric,
+	IAuthenticate,
 	ICredentialTestRequest,
 	ICredentialType,
 	Icon,
 	INodeProperties,
 } from 'n8n-workflow';
+import { validateCalleBaseUrl } from '../nodes/Calle/shared/utils';
 
 export class CalleApi implements ICredentialType {
 	name = 'calleApi';
@@ -13,7 +14,7 @@ export class CalleApi implements ICredentialType {
 
 	icon: Icon = { light: 'file:../icons/calle.svg', dark: 'file:../icons/calle.dark.svg' };
 
-	documentationUrl = 'https://test-docs.heycall-e.com/api-reference';
+	documentationUrl = 'https://docs.heycall-e.com/api-reference';
 
 	properties: INodeProperties[] = [
 		{
@@ -46,21 +47,24 @@ export class CalleApi implements ICredentialType {
 		},
 	];
 
-	authenticate: IAuthenticateGeneric = {
-		type: 'generic',
-		properties: {
-			headers: {
-				Authorization: '=Bearer {{$credentials.apiKey}}',
-			},
-		},
+	authenticate: IAuthenticate = async (credentials, requestOptions) => {
+		const baseUrl = validateCalleBaseUrl(credentials.baseUrl);
+		if (!baseUrl.ok) throw new Error(baseUrl.message);
+		const apiKey = typeof credentials.apiKey === 'string' ? credentials.apiKey.trim() : '';
+		if (!apiKey) throw new Error('API Key is required.');
+		return { ...requestOptions, headers: { ...requestOptions.headers, Authorization: `Bearer ${apiKey}` } };
 	};
 
 	test: ICredentialTestRequest = {
 		request: {
-			baseURL: 'https://api.heycall-e.com',
-			url: '/v1/calls/__n8n_credential_test__',
+			baseURL: '={{$credentials.baseUrl || "https://api.heycall-e.com"}}',
+			url: '/v2/calls/__n8n_credential_test__',
 			method: 'GET',
-			ignoreHttpStatusErrors: { ignore: true, except: [401, 403] },
+			disableFollowRedirect: true,
+			ignoreHttpStatusErrors: {
+				ignore: true,
+				except: Array.from({ length: 300 }, (_, index) => index + 300).filter((status) => status !== 404),
+			},
 		},
 		rules: [
 			{

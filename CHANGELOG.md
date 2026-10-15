@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- Add node version 2 for single-target Calls API v2 with a required flat result schema and an explicit business idempotency key. Saved version 1 Call nodes retain their legacy API and response format.
+- Wait for Calls and Goal Run result readiness, including unavailable results with no technical error. Include the accepted API resource ID in wait-timeout errors.
+- Align Goal Run phone inputs and Goal list pagination with the current API, and verify credentials against the configured v2 endpoint.
+
 ## 0.1.4
 
 - Update the CALL-E node icon.
