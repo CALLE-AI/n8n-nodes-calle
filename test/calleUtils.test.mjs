@@ -7,10 +7,11 @@ import {
 	assertGoalRunVariables,
 	buildGoalRunBody,
 	buildCreateCallBody,
+	buildLegacyCreateCallBody,
 	getPollingSleepMs,
 	getGoalPath,
 	getGoalRunPath,
-	isGoalRunResolved,
+	isResultReady,
 	isTerminalCallStatus,
 	maskPhoneNumber,
 	parseJsonObject,
@@ -34,7 +35,7 @@ describe('CALL-E utility helpers', () => {
 
 	it('builds a CALL-E create call body with recipient, schemas, metadata, and webhook URL', () => {
 		assert.deepEqual(
-			buildCreateCallBody({
+			buildLegacyCreateCallBody({
 				task: 'Call the recipient to confirm appointment details.',
 				phoneNumber: '+14155550100',
 				locale: 'en-US',
@@ -71,14 +72,14 @@ describe('CALL-E utility helpers', () => {
 		);
 	});
 
-	it('builds a Goal Run body with its documented phone_number and scalar variables', () => {
+	it('builds a Goal Run body with its documented phone and scalar variables', () => {
 		assert.deepEqual(
 			buildGoalRunBody({
 				phoneNumber: '+14155550100',
 				variables: { order_id: 'ORD-8472', expedited: true },
 			}),
 			{
-				phone_number: '+14155550100',
+				phone: '+14155550100',
 				variables: { order_id: 'ORD-8472', expedited: true },
 			},
 		);
@@ -89,16 +90,20 @@ describe('CALL-E utility helpers', () => {
 		assert.throws(() => assertGoalRunVariables({ score: Number.NaN }), /finite/);
 	});
 
-	it('waits for a Goal Run result or error rather than status alone', () => {
-		assert.equal(isGoalRunResolved({ status: 'completed', result: null, error: null }), false);
-		assert.equal(
-			isGoalRunResolved({ status: 'completed', result: { confirmed: true }, error: null }),
-			true,
-		);
-		assert.equal(
-			isGoalRunResolved({ status: 'failed', result: null, error: { code: 'no_answer' } }),
-			true,
-		);
+	it('uses result_status for Calls and Goal Runs, including unavailable and canceled results', () => {
+		assert.equal(isResultReady({ status: 'completed', result_status: 'pending' }), false);
+		assert.equal(isResultReady({ result: {}, error: null }), false);
+		assert.equal(isResultReady({ result_status: ['available'] }), false);
+		for (const result_status of ['available', 'unavailable', 'not_applicable']) {
+			assert.equal(isResultReady({ result_status, result: null, error: null }), true);
+		}
+	});
+
+	it('keeps omitted region and locale absent from immutable v2 request bodies', () => {
+		const body = buildCreateCallBody({ task: 'Ask whether the appointment is confirmed.', phoneNumber: '+14155550100', resultSchema: { type: 'object', properties: {}, additionalProperties: false } });
+		assert.equal(Object.hasOwn(body, 'region'), false);
+		assert.equal(Object.hasOwn(body, 'locale'), false);
+		assert.equal(Object.hasOwn(body, 'recipients'), false);
 	});
 
 	it('encodes public Goal and Goal Run identifiers in documented paths', () => {
@@ -109,6 +114,7 @@ describe('CALL-E utility helpers', () => {
 	it('requires a business-stable Goal Run idempotency key', () => {
 		assert.equal(assertRequiredIdempotencyKey('delivery:ORD-8472:v1'), 'delivery:ORD-8472:v1');
 		assert.throws(() => assertRequiredIdempotencyKey(''), /Idempotency Key is required/);
+		assert.throws(() => assertRequiredIdempotencyKey('x'.repeat(256)), /255/);
 	});
 
 	it('detects terminal call statuses', () => {

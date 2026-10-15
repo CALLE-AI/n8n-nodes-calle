@@ -25,7 +25,7 @@ const callOperations = [
             {
                 name: 'Create and Wait',
                 value: 'createAndWait',
-                description: 'Create a CALL-E call task and poll until it reaches a terminal status',
+                description: 'Create a CALL-E call and wait until its result is ready or unavailable',
                 action: 'Create a call task and wait for completion',
             },
             {
@@ -68,7 +68,7 @@ const goalRunOperations = [
         options: [
             { name: 'Create', value: 'createGoalRun', description: 'Create a phone-specific execution of a published Goal', action: 'Create a goal run' },
             { name: 'Get', value: 'getGoalRun', description: 'Get a Goal Run by Goal and Run ID', action: 'Get a goal run' },
-            { name: 'Create and Wait', value: 'createGoalRunAndWait', description: 'Create a Goal Run and poll for its result or final error', action: 'Create a goal run and wait for a result' },
+            { name: 'Create and Wait', value: 'createGoalRunAndWait', description: 'Create a Goal Run and wait until its result is ready or unavailable', action: 'Create a goal run and wait for a result' },
         ],
         default: 'createGoalRun',
     },
@@ -115,10 +115,29 @@ const createFields = [
         description: 'Unique key CALL-E can use to avoid duplicate call tasks',
         displayOptions: {
             show: {
+                '@version': [1],
                 resource: ['call'],
                 operation: ['create', 'createAndWait'],
             },
         },
+    },
+    {
+        displayName: 'Idempotency Key',
+        name: 'idempotencyKey',
+        type: 'string',
+        required: true,
+        default: '',
+        description: 'Stable business key for one call. Reuse the key and unchanged inputs after a timeout.',
+        displayOptions: { show: { '@version': [2], resource: ['call'], operation: ['create', 'createAndWait'] } },
+    },
+    {
+        displayName: 'Result Schema',
+        name: 'resultSchema',
+        type: 'json',
+        required: true,
+        default: '',
+        description: 'Closed JSON object schema with additionalProperties false and at most 32 string, boolean, integer, or number fields',
+        displayOptions: { show: { '@version': [2], resource: ['call'], operation: ['create', 'createAndWait'] } },
     },
     {
         displayName: 'Additional Fields',
@@ -154,6 +173,7 @@ const createFields = [
                 type: 'json',
                 default: '',
                 description: 'JSON object schema for each recipient-level structured result',
+                displayOptions: { show: { '@version': [1] } },
             },
             {
                 displayName: 'Region',
@@ -169,6 +189,7 @@ const createFields = [
                 type: 'json',
                 default: '',
                 description: 'JSON object schema for the task-level structured result',
+                displayOptions: { show: { '@version': [1] } },
             },
             {
                 displayName: 'Webhook URL',
@@ -204,7 +225,7 @@ const createFields = [
         typeOptions: {
             minValue: 1000,
         },
-        description: 'Maximum time to wait for the call task to reach a terminal status',
+        description: 'Maximum wait for a final result; a timeout does not cancel the call',
         displayOptions: {
             show: {
                 resource: ['call', 'goalRun'],
@@ -220,7 +241,7 @@ const getFields = [
         type: 'string',
         required: true,
         default: '',
-        description: 'CALL-E call task ID',
+        description: 'API resource ID returned by Create, not the Billing Call ID',
         displayOptions: {
             show: {
                 resource: ['call'],
@@ -233,7 +254,7 @@ const getFields = [
         name: 'cursor',
         type: 'string',
         default: '',
-        description: 'Pagination cursor returned by CALL-E',
+        description: 'Next-page cursor, or last event ID when polling for new events',
         displayOptions: {
             show: {
                 resource: ['call'],
@@ -312,7 +333,7 @@ const goalFields = [
         name: 'goalRunIdempotencyKey',
         type: 'string',
         required: true,
-        default: '={{$execution.id + ":goal-run:" + $itemIndex}}',
+        default: '',
         description: 'Stable business key for one Goal Run. Reuse it only for retries of the exact same request.',
         displayOptions: { show: { resource: ['goalRun'], operation: ['createGoalRun', 'createGoalRunAndWait'] } },
     },
@@ -332,7 +353,7 @@ class Calle {
             name: 'calle',
             icon: { light: 'file:../../icons/calle.svg', dark: 'file:../../icons/calle.dark.svg' },
             group: ['output'],
-            version: 1,
+            version: [1, 2],
             subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
             description: 'Create and monitor CALL-E AI-agent phone-call tasks',
             defaults: {
@@ -345,7 +366,6 @@ class Calle {
                 {
                     name: 'calleApi',
                     required: true,
-                    testedBy: 'calleApiCredentialTest',
                 },
             ],
             properties: [
@@ -378,11 +398,6 @@ class Calle {
                 ...goalFields,
             ],
         };
-        this.methods = {
-            credentialTest: {
-                calleApiCredentialTest,
-            },
-        };
     }
     async execute() {
         const items = this.getInputData();
@@ -412,28 +427,6 @@ class Calle {
     }
 }
 exports.Calle = Calle;
-async function calleApiCredentialTest(credential) {
-    var _a;
-    const data = (_a = credential.data) !== null && _a !== void 0 ? _a : {};
-    const apiKey = typeof data.apiKey === 'string' ? data.apiKey.trim() : '';
-    if (!apiKey) {
-        return {
-            status: 'Error',
-            message: 'API Key is required.',
-        };
-    }
-    const baseUrlValidation = (0, utils_1.validateCalleBaseUrl)(data.baseUrl);
-    if (!baseUrlValidation.ok) {
-        return {
-            status: 'Error',
-            message: baseUrlValidation.message,
-        };
-    }
-    return {
-        status: 'OK',
-        message: 'CALL-E credential settings are valid.',
-    };
-}
 async function executeCallOperation(operation, itemIndex) {
     if (operation === 'create') {
         return await createCall.call(this, itemIndex);
@@ -465,8 +458,9 @@ async function executeResourceOperation(resource, operation, itemIndex) {
 }
 async function createCall(itemIndex) {
     const body = getCreateCallBody.call(this, itemIndex);
-    const idempotencyKey = getRequiredStringParameter.call(this, 'idempotencyKey', itemIndex);
-    return (await callCalleApi.call(this, 'POST', '/v1/calls', itemIndex, body, {}, {
+    const key = getRequiredStringParameter.call(this, 'idempotencyKey', itemIndex);
+    const idempotencyKey = this.getNode().typeVersion === 1 ? key : (0, utils_1.assertRequiredIdempotencyKey)(key);
+    return (await callCalleApi.call(this, 'POST', getCallsPath.call(this), itemIndex, body, {}, {
         'Idempotency-Key': idempotencyKey,
     }));
 }
@@ -476,26 +470,33 @@ async function createCallAndWait(itemIndex) {
     const pollingInterval = getNumberParameter.call(this, 'pollingInterval', itemIndex);
     const timeout = getNumberParameter.call(this, 'timeout', itemIndex);
     const deadline = Date.now() + timeout;
-    while (Date.now() <= deadline) {
-        const call = await getCallById.call(this, callId, itemIndex);
-        const status = typeof call.status === 'string' ? call.status : '';
-        if ((0, utils_1.isTerminalCallStatus)(status)) {
-            return call;
-        }
+    const resolved = (call) => this.getNode().typeVersion === 1
+        ? (0, utils_1.isTerminalCallStatus)(String(call.status))
+        : (0, utils_1.isResultReady)(call);
+    let latestCall = createdCall;
+    while (!resolved(latestCall)) {
         const sleepMs = (0, utils_1.getPollingSleepMs)(pollingInterval, deadline);
         if (sleepMs <= 0) {
             break;
         }
         await (0, n8n_workflow_1.sleep)(sleepMs);
+        if (Date.now() >= deadline)
+            break;
+        latestCall = await getCallById.call(this, callId, itemIndex);
     }
-    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Timed out waiting for CALL-E call ${callId} to complete.`, { itemIndex });
+    if (resolved(latestCall))
+        return latestCall;
+    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Timed out waiting for CALL-E call ${callId}. Use Get with this ID to resume; a timeout does not cancel the call.`, { itemIndex });
+}
+function getCallsPath() {
+    return this.getNode().typeVersion === 1 ? '/v1/calls' : '/v2/calls';
 }
 async function getCall(itemIndex) {
     const callId = getRequiredStringParameter.call(this, 'callId', itemIndex);
     return await getCallById.call(this, callId, itemIndex);
 }
 async function getCallById(callId, itemIndex) {
-    return (await callCalleApi.call(this, 'GET', `/v1/calls/${encodeURIComponent(callId)}`, itemIndex));
+    return (await callCalleApi.call(this, 'GET', `${getCallsPath.call(this)}/${encodeURIComponent(callId)}`, itemIndex));
 }
 async function listCallEvents(itemIndex) {
     const callId = getRequiredStringParameter.call(this, 'callId', itemIndex);
@@ -505,14 +506,14 @@ async function listCallEvents(itemIndex) {
     if (cursor) {
         qs.cursor = cursor;
     }
-    return (await callCalleApi.call(this, 'GET', `/v1/calls/${encodeURIComponent(callId)}/events`, itemIndex, undefined, qs));
+    return (await callCalleApi.call(this, 'GET', `${getCallsPath.call(this)}/${encodeURIComponent(callId)}/events`, itemIndex, undefined, qs));
 }
 async function executeGoalOperation(operation, itemIndex) {
     if (operation === 'list') {
         const qs = { limit: getNumberParameter.call(this, 'goalLimit', itemIndex) };
         const cursor = getOptionalStringParameter.call(this, 'goalCursor', itemIndex);
         if (cursor)
-            qs.cursor = cursor;
+            qs.after = cursor;
         return (await callCalleApi.call(this, 'GET', '/v1/goals', itemIndex, undefined, qs));
     }
     if (operation === 'getGoal') {
@@ -550,25 +551,29 @@ async function createGoalRunAndWait(itemIndex) {
     const timeout = getNumberParameter.call(this, 'timeout', itemIndex);
     const deadline = Date.now() + timeout;
     let latestGoalRun = createdGoalRun;
-    while (!(0, utils_1.isGoalRunResolved)(latestGoalRun)) {
+    while (!(0, utils_1.isResultReady)(latestGoalRun)) {
         const sleepMs = (0, utils_1.getPollingSleepMs)(pollingInterval, deadline);
         if (sleepMs <= 0)
             break;
         await (0, n8n_workflow_1.sleep)(sleepMs);
+        if (Date.now() >= deadline)
+            break;
         latestGoalRun = (await callCalleApi.call(this, 'GET', (0, utils_1.getGoalRunPath)(goalId, goalRunId), itemIndex));
     }
-    if ((0, utils_1.isGoalRunResolved)(latestGoalRun))
+    if ((0, utils_1.isResultReady)(latestGoalRun))
         return latestGoalRun;
-    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Timed out waiting for CALL-E Goal Run ${goalRunId} to produce a result or error.`, { itemIndex });
+    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Timed out waiting for CALL-E Goal Run ${goalRunId}. Use Get with this ID to resume; a timeout does not cancel the run.`, { itemIndex });
 }
 function getCreateCallBody(itemIndex) {
     const task = getRequiredStringParameter.call(this, 'task', itemIndex);
     const phoneNumber = getRequiredStringParameter.call(this, 'phoneNumber', itemIndex);
     const additionalFields = this.getNodeParameter('additionalFields', itemIndex, {});
     const metadata = (0, utils_1.parseJsonObject)(additionalFields.metadata, 'Metadata');
-    const resultSchema = (0, utils_1.parseJsonObject)(additionalFields.resultSchema, 'Result Schema');
+    const legacy = this.getNode().typeVersion === 1;
+    const resultSchema = (0, utils_1.parseJsonObject)(legacy ? additionalFields.resultSchema : this.getNodeParameter('resultSchema', itemIndex, ''), 'Result Schema');
     const recipientResultSchema = (0, utils_1.parseJsonObject)(additionalFields.recipientResultSchema, 'Recipient Result Schema');
-    return (0, utils_1.buildCreateCallBody)({
+    const buildBody = legacy ? utils_1.buildLegacyCreateCallBody : utils_1.buildCreateCallBody;
+    return buildBody({
         task,
         phoneNumber,
         locale: optionalString(additionalFields.locale),

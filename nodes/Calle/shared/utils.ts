@@ -22,6 +22,16 @@ export interface CreateCallBodyInput {
 
 export interface CreateCallBody {
 	task: string;
+	phone: string;
+	locale?: string;
+	region?: string;
+	result_schema: JsonObject;
+	metadata?: JsonObject;
+	webhook_url?: string;
+}
+
+export interface LegacyCreateCallBody {
+	task: string;
 	recipients: Array<{
 		phones: string[];
 		locale?: string;
@@ -34,7 +44,7 @@ export interface CreateCallBody {
 }
 
 export interface GoalRunBody {
-	phone_number: string;
+	phone: string;
 	variables?: JsonObject;
 }
 
@@ -83,8 +93,8 @@ export function parseJsonObject(value: unknown, fieldName: string): JsonObject |
 	return parsed;
 }
 
-export function buildCreateCallBody(input: CreateCallBodyInput): CreateCallBody {
-	const recipient: CreateCallBody['recipients'][number] = {
+export function buildLegacyCreateCallBody(input: CreateCallBodyInput): LegacyCreateCallBody {
+	const recipient: LegacyCreateCallBody['recipients'][number] = {
 		phones: [assertValidE164PhoneNumber(input.phoneNumber)],
 	};
 
@@ -96,7 +106,7 @@ export function buildCreateCallBody(input: CreateCallBodyInput): CreateCallBody 
 		recipient.region = input.region;
 	}
 
-	const body: CreateCallBody = {
+	const body: LegacyCreateCallBody = {
 		task: input.task,
 		recipients: [recipient],
 	};
@@ -118,6 +128,53 @@ export function buildCreateCallBody(input: CreateCallBodyInput): CreateCallBody 
 	}
 
 	return body;
+}
+
+export function buildCreateCallBody(input: CreateCallBodyInput): CreateCallBody {
+	if (input.recipientResultSchema !== undefined) {
+		throw new CalleValidationError(
+			'Recipient Result Schema is not supported by Calls v2. Move its required fields into Result Schema.',
+		);
+	}
+
+	const body: CreateCallBody = {
+		task: input.task,
+		phone: assertValidE164PhoneNumber(input.phoneNumber),
+		result_schema: assertResultSchema(input.resultSchema),
+	};
+
+	if (input.locale) body.locale = input.locale;
+	if (input.region) body.region = input.region;
+	if (input.metadata !== undefined) body.metadata = input.metadata;
+	if (input.webhookUrl) body.webhook_url = input.webhookUrl;
+	return body;
+}
+
+function assertResultSchema(schema: JsonObject | undefined): JsonObject {
+	if (!schema || schema.type !== 'object' || schema.additionalProperties !== false) {
+		throw new CalleValidationError(
+			'Result Schema is required and must use type "object" and additionalProperties false.',
+		);
+	}
+	const properties = schema.properties === undefined ? {} : schema.properties;
+	if (!isJsonObject(properties) || Object.keys(properties).length > 32) {
+		throw new CalleValidationError('Result Schema must contain at most 32 scalar properties.');
+	}
+	const combinators = ['allOf', 'anyOf', 'oneOf', 'not'];
+	if (combinators.some((key) => key in schema)) {
+		throw new CalleValidationError('Result Schema does not support schema combinators.');
+	}
+	for (const [name, property] of Object.entries(properties)) {
+		if (
+			!isJsonObject(property) ||
+			typeof property.type !== 'string' ||
+			!['string', 'boolean', 'integer', 'number'].includes(property.type) ||
+			combinators.some((key) => key in property)
+		) {
+			throw new CalleValidationError(`Result Schema.${name} must use a scalar type without combinators.`);
+		}
+	}
+	return schema;
 }
 
 export function assertGoalRunVariables(variables: JsonObject | undefined): JsonObject | undefined {
@@ -145,7 +202,7 @@ export function assertGoalRunVariables(variables: JsonObject | undefined): JsonO
 export function buildGoalRunBody(input: GoalRunBodyInput): GoalRunBody {
 	const variables = assertGoalRunVariables(input.variables);
 	const body: GoalRunBody = {
-		phone_number: assertValidE164PhoneNumber(input.phoneNumber),
+		phone: assertValidE164PhoneNumber(input.phoneNumber),
 	};
 
 	if (variables !== undefined && Object.keys(variables).length > 0) {
@@ -155,11 +212,8 @@ export function buildGoalRunBody(input: GoalRunBodyInput): GoalRunBody {
 	return body;
 }
 
-export function isGoalRunResolved(goalRun: JsonObject): boolean {
-	return (
-		(goalRun.result !== null && goalRun.result !== undefined) ||
-		(goalRun.error !== null && goalRun.error !== undefined)
-	);
+export function isResultReady(call: JsonObject): boolean {
+	return call.result_status === 'available' || call.result_status === 'unavailable' || call.result_status === 'not_applicable';
 }
 
 export function getGoalPath(goalId: string): string {
@@ -175,6 +229,9 @@ export function assertRequiredIdempotencyKey(value: string): string {
 
 	if (!trimmed) {
 		throw new CalleValidationError('Idempotency Key is required.');
+	}
+	if (Array.from(trimmed).length > 255) {
+		throw new CalleValidationError('Idempotency Key must contain at most 255 characters.');
 	}
 
 	return trimmed;
