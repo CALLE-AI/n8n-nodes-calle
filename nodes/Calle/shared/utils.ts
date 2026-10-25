@@ -241,14 +241,6 @@ export function isTerminalCallStatus(status: string): boolean {
 	return status === 'completed' || status === 'failed' || status === 'canceled';
 }
 
-export function maskPhoneNumber(phoneNumber: string): string {
-	if (phoneNumber.length < 8) {
-		return '***';
-	}
-
-	return `${phoneNumber.slice(0, 5)}***${phoneNumber.slice(-4)}`;
-}
-
 export function validateCalleBaseUrl(baseUrl: unknown): CalleBaseUrlValidationResult {
 	const rawBaseUrl = typeof baseUrl === 'string' && baseUrl.trim() ? baseUrl.trim() : DEFAULT_BASE_URL;
 	let url: URL;

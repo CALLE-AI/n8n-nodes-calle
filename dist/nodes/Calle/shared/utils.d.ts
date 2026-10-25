@@ -56,6 +56,5 @@ export declare function getGoalPath(goalId: string): string;
 export declare function getGoalRunPath(goalId: string, goalRunId: string): string;
 export declare function assertRequiredIdempotencyKey(value: string): string;
 export declare function isTerminalCallStatus(status: string): boolean;
-export declare function maskPhoneNumber(phoneNumber: string): string;
 export declare function validateCalleBaseUrl(baseUrl: unknown): CalleBaseUrlValidationResult;
 export declare function getPollingSleepMs(pollingInterval: number, deadline: number, now?: number): number;
