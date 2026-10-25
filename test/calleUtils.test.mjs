@@ -13,7 +13,6 @@ import {
 	getGoalRunPath,
 	isResultReady,
 	isTerminalCallStatus,
-	maskPhoneNumber,
 	parseJsonObject,
 	validateCalleBaseUrl,
 } from '../dist/nodes/Calle/shared/utils.js';
@@ -122,11 +121,6 @@ describe('CALL-E utility helpers', () => {
 		assert.equal(isTerminalCallStatus('failed'), true);
 		assert.equal(isTerminalCallStatus('canceled'), true);
 		assert.equal(isTerminalCallStatus('queued'), false);
-	});
-
-	it('masks phone numbers for errors and summaries', () => {
-		assert.equal(maskPhoneNumber('+14155550100'), '+1415***0100');
-		assert.equal(maskPhoneNumber('1234'), '***');
 	});
 
 	it('requires HTTPS base URLs except for loopback local development hosts', () => {

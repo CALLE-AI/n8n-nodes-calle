@@ -11,7 +11,6 @@ exports.getGoalPath = getGoalPath;
 exports.getGoalRunPath = getGoalRunPath;
 exports.assertRequiredIdempotencyKey = assertRequiredIdempotencyKey;
 exports.isTerminalCallStatus = isTerminalCallStatus;
-exports.maskPhoneNumber = maskPhoneNumber;
 exports.validateCalleBaseUrl = validateCalleBaseUrl;
 exports.getPollingSleepMs = getPollingSleepMs;
 const n8n_workflow_1 = require("n8n-workflow");
@@ -158,12 +157,6 @@ function assertRequiredIdempotencyKey(value) {
 }
 function isTerminalCallStatus(status) {
     return status === 'completed' || status === 'failed' || status === 'canceled';
-}
-function maskPhoneNumber(phoneNumber) {
-    if (phoneNumber.length < 8) {
-        return '***';
-    }
-    return `${phoneNumber.slice(0, 5)}***${phoneNumber.slice(-4)}`;
 }
 function validateCalleBaseUrl(baseUrl) {
     const rawBaseUrl = typeof baseUrl === 'string' && baseUrl.trim() ? baseUrl.trim() : DEFAULT_BASE_URL;
