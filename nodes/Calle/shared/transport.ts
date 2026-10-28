@@ -3,6 +3,7 @@ import type {
 	IExecuteFunctions,
 	IHttpRequestMethods,
 	IHttpRequestOptions,
+	ILoadOptionsFunctions,
 } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { validateCalleBaseUrl } from './utils';
@@ -10,7 +11,7 @@ import { validateCalleBaseUrl } from './utils';
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
 export async function calleApiRequest(
-	this: IExecuteFunctions,
+	this: IExecuteFunctions | ILoadOptionsFunctions,
 	method: IHttpRequestMethods,
 	path: string,
 	body?: IDataObject,
