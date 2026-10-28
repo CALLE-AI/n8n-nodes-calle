@@ -716,7 +716,14 @@ async function createGoalRunAndWait(this: IExecuteFunctions, itemIndex: number):
 		if (sleepMs <= 0) break;
 		await sleep(sleepMs);
 		if (Date.now() >= deadline) break;
-		latestGoalRun = (await callCalleApi.call(this, 'GET', getGoalRunPath(goalId, goalRunId), itemIndex)) as IDataObject;
+		try {
+			latestGoalRun = (await callCalleApi.call(this, 'GET', getGoalRunPath(goalId, goalRunId), itemIndex)) as IDataObject;
+		} catch (error) {
+			throw new NodeOperationError(this.getNode(), error as Error, {
+				itemIndex,
+				message: `Could not retrieve CALL-E Goal Run ${goalRunId}. Use Get with this ID to resume; a request failure does not cancel the run.`,
+			});
+		}
 	}
 
 	if (isResultReady(latestGoalRun)) return latestGoalRun;

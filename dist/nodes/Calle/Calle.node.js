@@ -618,7 +618,15 @@ async function createGoalRunAndWait(itemIndex) {
         await (0, n8n_workflow_1.sleep)(sleepMs);
         if (Date.now() >= deadline)
             break;
-        latestGoalRun = (await callCalleApi.call(this, 'GET', (0, utils_1.getGoalRunPath)(goalId, goalRunId), itemIndex));
+        try {
+            latestGoalRun = (await callCalleApi.call(this, 'GET', (0, utils_1.getGoalRunPath)(goalId, goalRunId), itemIndex));
+        }
+        catch (error) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), error, {
+                itemIndex,
+                message: `Could not retrieve CALL-E Goal Run ${goalRunId}. Use Get with this ID to resume; a request failure does not cancel the run.`,
+            });
+        }
     }
     if ((0, utils_1.isResultReady)(latestGoalRun))
         return latestGoalRun;

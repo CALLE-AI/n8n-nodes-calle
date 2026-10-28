@@ -119,7 +119,7 @@ Preparation and creation are separate requests. The API pins the current publica
 - `Idempotency Key`: A durable key for exactly one business event. Reuse the same key only to retry the identical Goal Run request.
 - `Variables`: An optional flat JSON object of finite strings, booleans, or numbers accepted by the Goal's published input schema.
 
-`Create and Wait` continues after `status=completed` while `result_status=pending`. It finishes for an unavailable result even when both `result` and `error` are null. A timeout does not cancel the Goal Run. Use `Get` with its Goal Run ID rather than creating another run.
+`Create and Wait` continues after `status=completed` while `result_status=pending`. It finishes for an unavailable result even when both `result` and `error` are null. Timeout and polling-request errors include the accepted Goal Run ID. They do not cancel the run; use `Get` with that ID rather than creating another run.
 
 ## Outputs
 

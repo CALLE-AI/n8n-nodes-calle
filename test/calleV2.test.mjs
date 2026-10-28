@@ -42,7 +42,9 @@ function execution(parameters, responses, { version = 2, continueOnFail = false 
 				assert.equal(credential, 'calleApi');
 				requests.push(structuredClone(options));
 				assert.ok(responses.length, 'Unexpected API request');
-				return responses.shift();
+				const response = responses.shift();
+				if (response instanceof Error) throw response;
+				return response;
 			},
 		},
 	};
@@ -239,6 +241,19 @@ describe('CALL-E Calls v2 execution', () => {
 });
 
 describe('CALL-E current Goal contract', () => {
+	it('keeps the accepted Goal Run ID on a polling request failure and recovers with Get only', async () => {
+		const run = execution({
+			resource: 'goalRun', operation: 'createGoalRunAndWait', goalId: 'goal_saved',
+			goalRunPhoneNumber: '+14155550100', goalRunIdempotencyKey: 'saved-event',
+			goalRunVariables: {}, pollingInterval: 1, timeout: 1000,
+		}, [{ id: 'rgrp_saved', result_status: 'pending' }, new Error('stream has been aborted')]);
+		await assert.rejects(run.run(), /Goal Run rgrp_saved.*Use Get/);
+		assert.deepEqual(run.requests.map((request) => request.method), ['POST', 'GET']);
+		const recovered = execution({ resource: 'goalRun', operation: 'getGoalRun', goalId: 'goal_saved', goalRunId: 'rgrp_saved' }, [{ id: 'rgrp_saved', result_status: 'available' }]);
+		await recovered.run();
+		assert.deepEqual(recovered.requests.map((request) => request.method), ['GET']);
+	});
+
 	it('keeps Goal paths on v1 and uses after for list pagination', async () => {
 		const run = execution(
 			{ resource: 'goal', operation: 'list', goalCursor: 'opaque_cursor', goalLimit: 20 },
