@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Add published Goal selection and read-only configuration preparation with input/result fields, required flags, types, defaults, enums, and RunSpec versions.
+- Validate business variables against a fixed reviewed Goal interface and report affected mappings when the publication changes. Link Goal mapping and recoverable appointment workflow examples.
+- Retain accepted Goal Run IDs in polling-request errors so interrupted executions can resume with Get.
+
 ## 0.2.0
 
 - Add node version 2 for single-target Calls API v2 with a required flat result schema and an explicit business idempotency key. Saved version 1 Call nodes retain their legacy API and response format.
