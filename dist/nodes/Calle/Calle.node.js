@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Calle = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
 const transport_1 = require("./shared/transport");
+const goalConfiguration_1 = require("./shared/goalConfiguration");
 const utils_1 = require("./shared/utils");
 const callOperations = [
     {
@@ -67,6 +68,7 @@ const goalRunOperations = [
         displayOptions: { show: { resource: ['goalRun'] } },
         options: [
             { name: 'Create', value: 'createGoalRun', description: 'Create a phone-specific execution of a published Goal', action: 'Create a goal run' },
+            { name: 'Prepare Configuration', value: 'prepareGoalRun', description: 'Inspect a published Goal and validate business variables without creating a run', action: 'Prepare goal run configuration' },
             { name: 'Get', value: 'getGoalRun', description: 'Get a Goal Run by Goal and Run ID', action: 'Get a goal run' },
             { name: 'Create and Wait', value: 'createGoalRunAndWait', description: 'Create a Goal Run and wait until its result is ready or unavailable', action: 'Create a goal run and wait for a result' },
         ],
@@ -282,6 +284,27 @@ const getFields = [
 ];
 const goalFields = [
     {
+        displayName: 'Published Goal',
+        name: 'publishedGoal',
+        type: 'resourceLocator',
+        default: { mode: 'list', value: '' },
+        required: true,
+        description: 'Active published Goal whose input and result fields should be reviewed',
+        displayOptions: { show: { resource: ['goalRun'], operation: ['prepareGoalRun'] } },
+        modes: [
+            { displayName: 'From List', name: 'list', type: 'list', typeOptions: { searchListMethod: 'getPublishedGoals', searchable: true } },
+            { displayName: 'By ID', name: 'id', type: 'string' },
+        ],
+    },
+    {
+        displayName: 'Reviewed Goal Interface',
+        name: 'reviewedGoalInterface',
+        type: 'json',
+        default: '',
+        description: 'Leave empty to inspect fields, then save the returned goal_json as a fixed value after reviewing the mapping. A changed publication blocks readiness.',
+        displayOptions: { show: { resource: ['goalRun'], operation: ['prepareGoalRun'] } },
+    },
+    {
         displayName: 'Cursor',
         name: 'goalCursor',
         type: 'string',
@@ -343,11 +366,40 @@ const goalFields = [
         type: 'json',
         default: '',
         description: 'Optional flat object of finite string, boolean, or number values accepted by the published Goal',
-        displayOptions: { show: { resource: ['goalRun'], operation: ['createGoalRun', 'createGoalRunAndWait'] } },
+        displayOptions: { show: { resource: ['goalRun'], operation: ['prepareGoalRun', 'createGoalRun', 'createGoalRunAndWait'] } },
     },
 ];
 class Calle {
     constructor() {
+        this.methods = {
+            listSearch: {
+                async getPublishedGoals(filter = '', paginationToken) {
+                    const qs = { limit: 100 };
+                    if (paginationToken)
+                        qs.after = paginationToken;
+                    const page = await transport_1.calleApiRequest.call(this, 'GET', '/v1/goals', undefined, qs);
+                    if (!Array.isArray(page.data)) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Goal list response must contain data.');
+                    }
+                    if (page.next_cursor && page.next_cursor === paginationToken) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Goal pagination did not advance.');
+                    }
+                    return {
+                        results: page.data
+                            .filter((goal) => {
+                            var _a;
+                            return goal.status === 'active' && goal.published_run_spec &&
+                                `${(_a = goal.title) !== null && _a !== void 0 ? _a : ''} ${goal.id}`.toLowerCase().includes(filter.toLowerCase());
+                        })
+                            .map((goal) => ({
+                            name: `${goal.title || goal.id} — v${goal.published_run_spec.version} (${goal.id})`,
+                            value: String(goal.id),
+                        })),
+                        ...(page.next_cursor ? { paginationToken: String(page.next_cursor) } : {}),
+                    };
+                },
+            },
+        };
         this.description = {
             displayName: 'CALL-E',
             name: 'calle',
@@ -523,6 +575,14 @@ async function executeGoalOperation(operation, itemIndex) {
     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Unsupported Goal operation: ${operation}`, { itemIndex });
 }
 async function executeGoalRunOperation(operation, itemIndex) {
+    if (operation === 'prepareGoalRun') {
+        const selected = this.getNodeParameter('publishedGoal', itemIndex, '', { extractValue: true });
+        const goalId = String(selected).trim();
+        if (!goalId)
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Select a published Goal.', { itemIndex });
+        const goal = await callCalleApi.call(this, 'GET', (0, utils_1.getGoalPath)(goalId), itemIndex);
+        return (0, goalConfiguration_1.prepareGoalConfiguration)(goal, this.getNodeParameter('goalRunVariables', itemIndex, ''), this.getNodeParameter('reviewedGoalInterface', itemIndex, ''), goalId);
+    }
     if (operation === 'createGoalRun')
         return await createGoalRun.call(this, itemIndex);
     if (operation === 'getGoalRun')

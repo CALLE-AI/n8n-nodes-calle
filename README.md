@@ -53,6 +53,7 @@ The node does not expose a Cancel operation. The API supports [cancellation befo
 
 `Goal Run` operations:
 
+- `Prepare Configuration`: Selects an active published Goal and checks a business mapping without creating a run.
 - `Create`: Creates one phone-specific execution of a published Goal.
 - `Get`: Gets one Goal Run by Goal ID and Goal Run ID.
 - `Create and Wait`: Creates a Goal Run, then waits until `result_status` is `available`, `unavailable`, or `not_applicable`.
@@ -92,6 +93,25 @@ For example, use this Result Schema and include instructions in Task to return `
 
 ## Goal Run Parameters
 
+For new mappings, start with `Goal Run → Prepare Configuration`:
+
+1. Choose `Published Goal → From List` (search and pagination use your credential), or enter its ID. The list shows each Goal's published version and ID.
+2. Leave `Reviewed Goal Interface` empty and execute this read-only operation. Inspect `input_fields`, `result_fields`, required flags, scalar types, defaults, enums, and `run_spec_id` / `run_spec_version`.
+3. Map upstream business data into `Variables`. After reviewing both input and result mappings, save the returned `goal_json` as a **fixed value** in `Reviewed Goal Interface`. Keep that value until you deliberately review another publication; binding it to a fresh Goal response defeats change detection.
+4. Gate creation on `ready === true`, then use `goal_id` and `variables_json`. Missing inputs, wrong types, undeclared fields, and publication changes block readiness and leave these routing outputs empty. `errors` and `changes` name affected fields. Optional published defaults are applied before required-field checks; values are never coerced.
+
+This supports the published closed, flat scalar schema profile, including nullable scalar **results**. Nested fields, unsupported constraints, and future schema keywords stop preparation with the affected interface path. It does not generate a dynamic form.
+
+For example, map a business row's appointment reference to the Goal's declared input:
+
+```javascript
+{ test_reference: $json.appointment_reference }
+```
+
+`test_reference` is an example field, not a standard Goal parameter. Use the names returned by your Goal. The [Goal mapping example](https://github.com/CALLE-AI/awesome-phone-call-agents/tree/main/plugins/n8n-calle-api) includes a preview gate and an explicit business-result branch.
+
+Preparation and creation are separate requests. The API pins the current publication when accepting a new run and has no per-run version selector. Compare the accepted response's `run_spec.id` and `run_spec.version` with the prepared values before applying the result. If they differ, retain the accepted Run ID and review its mapping; do not create a replacement run. Existing Create/Get operations remain available for recovery with the original request/key or saved Run ID even after a Goal changes.
+
 `Create` and `Create and Wait` require:
 
 - `Goal ID`: The public ID of a published CALL-E Goal.
@@ -103,7 +123,7 @@ For example, use this Result Schema and include instructions in Task to return `
 
 ## Outputs
 
-The node returns the raw CALL-E API response for the selected operation:
+Execution operations return the raw CALL-E API response. `Prepare Configuration` returns the configuration check described above:
 
 - `Create` returns the accepted Call.
 - `Get` returns the current Call.
@@ -147,6 +167,8 @@ Operational safeguards:
 
 `Create and Wait` has a node-level timeout. If it expires, the error includes the accepted API resource ID; resume with Get. A client timeout does not cancel the call. If a creation response was lost before an ID was returned, replay the same key and unchanged request. Do not copy inferred region or locale from a response into the retry, generate a replacement key, or fall back to legacy creation.
 
+For longer appointment workflows, use the [recoverable appointment example](https://github.com/CALLE-AI/awesome-phone-call-agents/tree/main/plugins/n8n-calle-api). It saves the original request and key in an existing n8n Data Table row before creation, saves the accepted Call ID, waits with n8n's native Wait node, and caches terminal results before idempotent business writeback. A repeated trigger resumes that row; a writeback retry makes no CALL-E requests.
+
 ## Compatibility
 
 This package is intended for current n8n community node development flows using `@n8n/node-cli`.
@@ -166,8 +188,8 @@ This package is published from this repository through `.github/workflows/publis
 To publish a release, make sure `package.json` and `package-lock.json` have the target version, then push a matching tag:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 The workflow validates that the tag version matches `package.json`, runs lint, tests, build, and publishes with npm provenance.

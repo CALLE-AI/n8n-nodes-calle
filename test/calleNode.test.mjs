@@ -18,7 +18,7 @@ describe('CALL-E node resources', () => {
 			resource.options.map((option) => option.value),
 			['call', 'goal', 'goalRun'],
 		);
-		assert.deepEqual(operationValues, ['create', 'createAndWait', 'get', 'listEvents', 'list', 'getGoal', 'createGoalRun', 'getGoalRun', 'createGoalRunAndWait']);
+		assert.deepEqual(operationValues, ['create', 'createAndWait', 'get', 'listEvents', 'list', 'getGoal', 'createGoalRun', 'prepareGoalRun', 'getGoalRun', 'createGoalRunAndWait']);
 		assert.deepEqual(
 			propertyNames.filter((name) => ['goalId', 'goalRunId', 'goalRunVariables'].includes(name)),
 			['goalId', 'goalRunId', 'goalRunVariables'],

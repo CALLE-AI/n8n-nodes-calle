@@ -5,6 +5,8 @@ import {
 	sleep,
 	type IDataObject,
 	type IExecuteFunctions,
+	type ILoadOptionsFunctions,
+	type INodeListSearchResult,
 	type INodeExecutionData,
 	type INodeProperties,
 	type INodeType,
@@ -12,6 +14,7 @@ import {
 	type JsonObject as N8nJsonObject,
 } from 'n8n-workflow';
 import { calleApiRequest } from './shared/transport';
+import { prepareGoalConfiguration } from './shared/goalConfiguration';
 import {
 	assertGoalRunVariables,
 	assertRequiredIdempotencyKey,
@@ -91,6 +94,7 @@ const goalRunOperations: INodeProperties[] = [
 		displayOptions: { show: { resource: ['goalRun'] } },
 		options: [
 			{ name: 'Create', value: 'createGoalRun', description: 'Create a phone-specific execution of a published Goal', action: 'Create a goal run' },
+			{ name: 'Prepare Configuration', value: 'prepareGoalRun', description: 'Inspect a published Goal and validate business variables without creating a run', action: 'Prepare goal run configuration' },
 			{ name: 'Get', value: 'getGoalRun', description: 'Get a Goal Run by Goal and Run ID', action: 'Get a goal run' },
 			{ name: 'Create and Wait', value: 'createGoalRunAndWait', description: 'Create a Goal Run and wait until its result is ready or unavailable', action: 'Create a goal run and wait for a result' },
 		],
@@ -309,6 +313,27 @@ const getFields: INodeProperties[] = [
 
 const goalFields: INodeProperties[] = [
 	{
+		displayName: 'Published Goal',
+		name: 'publishedGoal',
+		type: 'resourceLocator',
+		default: { mode: 'list', value: '' },
+		required: true,
+		description: 'Active published Goal whose input and result fields should be reviewed',
+		displayOptions: { show: { resource: ['goalRun'], operation: ['prepareGoalRun'] } },
+		modes: [
+			{ displayName: 'From List', name: 'list', type: 'list', typeOptions: { searchListMethod: 'getPublishedGoals', searchable: true } },
+			{ displayName: 'By ID', name: 'id', type: 'string' },
+		],
+	},
+	{
+		displayName: 'Reviewed Goal Interface',
+		name: 'reviewedGoalInterface',
+		type: 'json',
+		default: '',
+		description: 'Leave empty to inspect fields, then save the returned goal_json as a fixed value after reviewing the mapping. A changed publication blocks readiness.',
+		displayOptions: { show: { resource: ['goalRun'], operation: ['prepareGoalRun'] } },
+	},
+	{
 		displayName: 'Cursor',
 		name: 'goalCursor',
 		type: 'string',
@@ -370,11 +395,41 @@ const goalFields: INodeProperties[] = [
 		type: 'json',
 		default: '',
 		description: 'Optional flat object of finite string, boolean, or number values accepted by the published Goal',
-		displayOptions: { show: { resource: ['goalRun'], operation: ['createGoalRun', 'createGoalRunAndWait'] } },
+		displayOptions: { show: { resource: ['goalRun'], operation: ['prepareGoalRun', 'createGoalRun', 'createGoalRunAndWait'] } },
 	},
 ];
 
 export class Calle implements INodeType {
+	methods = {
+		listSearch: {
+			async getPublishedGoals(
+				this: ILoadOptionsFunctions,
+				filter = '',
+				paginationToken?: string,
+			): Promise<INodeListSearchResult> {
+				const qs: IDataObject = { limit: 100 };
+				if (paginationToken) qs.after = paginationToken;
+				const page = await calleApiRequest.call(this, 'GET', '/v1/goals', undefined, qs);
+				if (!Array.isArray(page.data)) {
+					throw new NodeOperationError(this.getNode(), 'Goal list response must contain data.');
+				}
+				if (page.next_cursor && page.next_cursor === paginationToken) {
+					throw new NodeOperationError(this.getNode(), 'Goal pagination did not advance.');
+				}
+				return {
+					results: page.data
+						.filter((goal: IDataObject) => goal.status === 'active' && goal.published_run_spec &&
+							`${goal.title ?? ''} ${goal.id}`.toLowerCase().includes(filter.toLowerCase()))
+						.map((goal: IDataObject) => ({
+							name: `${goal.title || goal.id} — v${(goal.published_run_spec as IDataObject).version} (${goal.id})`,
+							value: String(goal.id),
+						})),
+					...(page.next_cursor ? { paginationToken: String(page.next_cursor) } : {}),
+				};
+			},
+		},
+	};
+
 	description: INodeTypeDescription = {
 		displayName: 'CALL-E',
 		name: 'calle',
@@ -613,6 +668,18 @@ async function executeGoalRunOperation(
 	operation: string,
 	itemIndex: number,
 ): Promise<IDataObject> {
+	if (operation === 'prepareGoalRun') {
+		const selected = this.getNodeParameter('publishedGoal', itemIndex, '', { extractValue: true });
+		const goalId = String(selected).trim();
+		if (!goalId) throw new NodeOperationError(this.getNode(), 'Select a published Goal.', { itemIndex });
+		const goal = await callCalleApi.call(this, 'GET', getGoalPath(goalId), itemIndex);
+		return prepareGoalConfiguration(
+			goal,
+			this.getNodeParameter('goalRunVariables', itemIndex, ''),
+			this.getNodeParameter('reviewedGoalInterface', itemIndex, ''),
+			goalId,
+		) as IDataObject;
+	}
 	if (operation === 'createGoalRun') return await createGoalRun.call(this, itemIndex);
 	if (operation === 'getGoalRun') return await getGoalRun.call(this, itemIndex);
 	if (operation === 'createGoalRunAndWait') return await createGoalRunAndWait.call(this, itemIndex);
